@@ -108,7 +108,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, m.keys.saveConfig):
-            // NOTE: not merged upstream yet
+			// NOTE: not merged upstream yet
 
 			// err := config.Export(m.config.Options, m.config.Credentials)
 			// if err != nil {
