@@ -1,2 +1,6 @@
-# eclass-tui
-tui version of eclass utils
+# E-Class TUI
+
+
+### Contribution
+
+- Read organization's central page
