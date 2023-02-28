@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -21,6 +22,7 @@ type listModel struct {
 	showHidden bool
 	keys       keyBinds
 	config     config.Config
+	testing    bool
 }
 
 func NewList(config config.Config) listModel {
@@ -100,6 +102,12 @@ func (m listModel) Init() tea.Cmd {
 	)
 }
 
+func (m listModel) logWhileTesting(format string, a ...any) {
+	if m.testing {
+		fmt.Printf(format, a...)
+	}
+}
+
 var docStyle = lip.NewStyle().Margin(1, 2)
 
 func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -162,6 +170,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
 		case key.Matches(msg, m.keys.toggleIncludeExpired):
 			m.config.Options.IncludeExpired = !m.config.Options.IncludeExpired
+            m.logWhileTesting("%t", m.config.Options.IncludeExpired)
 			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
 		}
 	case tea.WindowSizeMsg:
