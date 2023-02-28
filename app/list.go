@@ -1,13 +1,10 @@
 package main
 
 import (
-	"fmt"
-	"io"
 	"log"
 	"time"
 
 	"github.com/Huray-hub/eclass-utils/assignments/assignment"
-	"github.com/Huray-hub/eclass-utils/assignments/cmd/flags"
 	"github.com/Huray-hub/eclass-utils/assignments/config"
 	"github.com/Huray-hub/eclass-utils/assignments/course"
 
@@ -19,28 +16,30 @@ import (
 )
 
 type listModel struct {
-	list              list.Model
-	cache             []item
-	showHidden        bool
-	hiddenAssignments map[string]struct{}
-	hiddenCourses     map[string]struct{}
-	keys              keyBinds
+	list       list.Model
+	cache      []item
+	showHidden bool
+	keys       keyBinds
+	config     config.Config
 }
 
-func NewList() listModel {
+func NewList(config config.Config) listModel {
+	if config.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
+		config.Options.ExcludedAssignments = make(map[string][]string)
+	}
+	if config.Options.ExcludedCourses == nil {
+		config.Options.ExcludedCourses = make(map[string]struct{})
+	}
+
 	m := listModel{
-		list:              list.New([]list.Item{}, itemDelegate{}, 0, 0),
-		showHidden:        false,
-		hiddenAssignments: make(map[string]struct{}),
-		hiddenCourses:     make(map[string]struct{}),
-		keys:              newKeyBinds(),
+		list:       list.New([]list.Item{}, itemDelegate{}, 0, 0),
+		showHidden: false,
+		keys:       newKeyBinds(),
+		config:     config,
 	}
 	m.list.Title = "Εργασίες"
 	m.list.SetShowStatusBar(true)
-	statusTime, err := time.ParseDuration("5s")
-	if err != nil {
-		log.Fatal("Parsing status message duration failed.")
-	}
+	statusTime := time.Second * 2
 	m.list.StatusMessageLifetime = statusTime
 	m.list.SetStatusBarItemName("Εργασία", "Εργασίες")
 	m.list.SetSpinner(spinner.Dot)
@@ -52,6 +51,8 @@ func NewList() listModel {
 			m.keys.toggleHidden,
 			m.keys.toggleHideCourse,
 			m.keys.toggleHideAssignment,
+			m.keys.saveConfig,
+			m.keys.toggleIncludeExpired,
 		}
 	}
 	return m
@@ -61,6 +62,8 @@ type keyBinds struct {
 	toggleHideAssignment key.Binding
 	toggleHideCourse     key.Binding
 	toggleHidden         key.Binding
+	saveConfig           key.Binding
+	toggleIncludeExpired key.Binding
 }
 
 func newKeyBinds() keyBinds {
@@ -77,6 +80,14 @@ func newKeyBinds() keyBinds {
 			key.WithKeys(tea.KeySpace.String()),
 			key.WithHelp("space", "Εμφάνησε κρυμένες εργασίες"),
 		),
+		saveConfig: key.NewBinding(
+			key.WithKeys("s", "σ"),
+			key.WithHelp("s|σ", "Αποθήκευση"),
+		),
+		toggleIncludeExpired: key.NewBinding(
+			key.WithKeys("i", "ι"),
+			key.WithHelp("i|ι", "Include expired"), // TODO: greek help description
+		),
 	}
 }
 
@@ -85,60 +96,73 @@ func (m listModel) Init() tea.Cmd {
 		m.list.StartSpinner(),
 		getAssignments,
 		mockGetAssignments,
+		updateTitleCmd,
 	)
 }
 
 var docStyle = lip.NewStyle().Margin(1, 2)
-
-type updateMsg struct{}
-
-func updateCmd() tea.Msg { return updateMsg{} }
 
 func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
+		case key.Matches(msg, m.keys.saveConfig):
+            // NOTE: not merged upstream yet
+
+			// err := config.Export(m.config.Options, m.config.Credentials)
+			// if err != nil {
+			// 	return m, errorCmd(err)
+			// }
+			cmd := m.list.NewStatusMessage("Αποθηκέυση επιτυχής! (not really)")
+			return m, cmd
 		case key.Matches(msg, m.keys.toggleHideAssignment):
 			i, ok := m.list.SelectedItem().(item)
 			if !ok {
 				log.Print("Type Assertion failed")
 			}
-			// toggle hidden
-			hidden := false
-			for hidden_ass := range m.hiddenAssignments {
-				if hidden_ass == i.assignment.ID {
-					hidden = true
+			// toggle excluded
+			excluded := false
+			for excluded_assignment_ID := range m.config.Options.ExcludedAssignments {
+				if i.assignment.ID == excluded_assignment_ID {
+					excluded = true
 				}
 			}
-			if hidden {
-				delete(m.hiddenAssignments, i.assignment.ID)
+			var statusCmd tea.Cmd
+			if excluded {
+				delete(m.config.Options.ExcludedAssignments, i.assignment.ID)
+				statusCmd = m.list.NewStatusMessage("Επανέφερες την εργασία " + i.assignment.Title + ".")
 			} else {
-				m.hiddenAssignments[i.assignment.ID] = struct{}{}
+				m.config.Options.ExcludedAssignments[i.assignment.ID] = []string{} // HACK: uhh what do we put here again?
+				statusCmd = m.list.NewStatusMessage("Έκρυψες την εργασία " + i.assignment.Title + ".")
 			}
-			statusCmd := m.list.NewStatusMessage("Έκρυψες την εργασία " + i.assignment.Title + ".")
-			return m, tea.Batch(updateCmd, statusCmd)
+			return m, tea.Batch(updateItemsCmd, statusCmd)
 		case key.Matches(msg, m.keys.toggleHideCourse):
 			i, ok := m.list.SelectedItem().(item)
 			if !ok {
 				log.Print("Type Assertion failed")
 			}
-			hidden := false
-			for hidden_ass := range m.hiddenCourses {
-				if hidden_ass == i.assignment.Course.ID {
-					hidden = true
+			excluded := false
+			for excluded_course_ID := range m.config.Options.ExcludedCourses {
+				if i.assignment.Course.ID == excluded_course_ID {
+					excluded = true
 				}
 			}
-			if hidden {
-				delete(m.hiddenCourses, i.assignment.Course.ID)
+			var statusCmd tea.Cmd
+			if excluded {
+				delete(m.config.Options.ExcludedCourses, i.assignment.Course.ID)
+				statusCmd = m.list.NewStatusMessage("Επανέφερες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
 			} else {
-				m.hiddenCourses[i.assignment.Course.ID] = struct{}{}
+				m.config.Options.ExcludedCourses[i.assignment.Course.ID] = struct{}{}
+				statusCmd = m.list.NewStatusMessage("Έκρυψες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
 			}
-			statusCmd := m.list.NewStatusMessage("Έκρυψες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
-			return m, tea.Batch(updateCmd, statusCmd)
+			return m, tea.Batch(updateItemsCmd, statusCmd)
 		case key.Matches(msg, m.keys.toggleHidden):
 			m.showHidden = !m.showHidden
-			return m, updateCmd
+			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
+		case key.Matches(msg, m.keys.toggleIncludeExpired):
+			m.config.Options.IncludeExpired = !m.config.Options.IncludeExpired
+			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
@@ -150,21 +174,23 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var new_items []list.Item
 		for _, item := range m.cache {
-			var hidden = false
-			for hidden_ass := range m.hiddenAssignments {
-				if hidden_ass == item.assignment.ID {
-					hidden = true
-					break
-				}
-			}
-			for hidden_course := range m.hiddenCourses {
-				if hidden_course == item.assignment.Course.ID {
-					hidden = true
-					break
-				}
+			hide := false
+			if item.shouldHideAssignment(m.config.Options.ExcludedAssignments) {
+				hide = true
 			}
 
-			if hidden == m.showHidden {
+			if item.shouldHideCourse(m.config.Options.ExcludedCourses) {
+				hide = true
+			}
+
+			// if the deadline has passed and we don't include expired OR we show hidden
+			// hide this item
+			if item.shouldHideExpired() && (!m.config.Options.IncludeExpired || m.showHidden) {
+				hide = true
+			}
+
+			// log.Println(item.assignment.ID, "hidden? ", hide, " because ", item.hideReason)
+			if hide == m.showHidden {
 				new_items = append(new_items, item)
 			}
 
@@ -176,11 +202,23 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cache = append(m.cache, it.(item))
 		}
 		log.Print("Loaded assignments")
-		if len(msg) > 5 {
+		if len(msg) > 5 { // NOTE: mockGetAssignments returns 5, this is a hack
 			m.list.StopSpinner()
 		}
 		statusCmd := m.list.NewStatusMessage("Φόρτωση επιτυχής!")
-		return m, tea.Batch(updateCmd, statusCmd)
+		return m, tea.Batch(updateItemsCmd, statusCmd)
+	case updateTitleMsg:
+		var title string
+		if m.showHidden {
+			title += "Κρυμμένες εργασίες"
+		} else {
+			title += "Εργασίες"
+		}
+		if m.config.Options.IncludeExpired {
+			title += " | Εμφανίζονται Εκπρόθεσμες"
+		}
+		m.list.Title = title
+		return m, nil
 	case errorMsg:
 		log.Print(msg.err)
 		return m, nil
@@ -196,90 +234,25 @@ func (m listModel) View() string {
 	return docStyle.Render(m.list.View())
 }
 
-type item struct {
-	assignment assignment.Assignment
-	selected   bool
-}
-
-func (i item) FilterValue() string { // TODO: keybinds to change this func to others
-	return i.assignment.Course.Name
-}
-
-type itemDelegate struct{}
-
-var (
-	uniwaBlue      = lip.Color("#0b365b")
-	hoverBg        = lip.Color("#030F27")
-	uniwaLightBlue = lip.Color("#6eaede")
-	uniwaOrange    = lip.Color("#e67c17")
-	baseStyle      = lip.NewStyle().
-			PaddingLeft(4).
-			Foreground(lip.Color("#777777")).
-			Faint(true)
-	titleStyle = baseStyle.Copy().
-			PaddingLeft(2).
-			UnsetForeground().
-			Bold(true)
-	lateStyle = baseStyle.Copy().
-			Foreground(lip.Color("1"))
-	normalStyle = lip.NewStyle().
-			BorderStyle(lip.HiddenBorder()).
-			BorderLeft(true)
-	hoverStyle = lip.NewStyle().
-			BorderStyle(lip.ThickBorder()).
-			BorderLeft(true).
-			BorderForeground(uniwaBlue).
-			Foreground(uniwaLightBlue)
-            
-)
-
-func (itemD itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(item)
-	if !ok {
-		return
-	}
-
-	var title, course, date string
-
-	title = titleStyle.Render(i.assignment.Title)
-	course = baseStyle.Render(i.assignment.Course.Name)
-
-	if i.assignment.Deadline.Before(time.Now()) {
-		date = lateStyle.Render("Εκπρόθεσμη  : ")
-	} else {
-		date = baseStyle.Render("Παράδωση εώς: ")
-	}
-
-	date += baseStyle.Render(i.assignment.Deadline.Format("02/01/2006 15:04:05"))
-
-    result := lip.JoinVertical(lip.Left, title, course, date)
-
-	if index == m.Index() {
-		result = hoverStyle.Render(result)
-	} else {
-		result = normalStyle.Render(result)
-	}
-
-	fmt.Fprint(w, result)
-}
-
-func (itemD itemDelegate) Height() int {
-	return 3
-}
-
-func (itemD itemDelegate) Spacing() int {
-	return 0
-}
-
-func (itemD itemDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
-	return nil
-}
-
+type updateTitleMsg struct{}
+type writeConfigMsg struct{}
+type updateMsg struct{}
 type itemsMsg []list.Item
 type errorMsg struct{ err error }
 
+func updateTitleCmd() tea.Msg { return updateTitleMsg{} }
+func writeConfigCmd() tea.Msg { return writeConfigMsg{} }
+func updateItemsCmd() tea.Msg { return updateMsg{} }
+func errorCmd(err error) tea.Cmd {
+	return func() tea.Msg {
+		return errorMsg{err}
+	}
+}
+
 func (e errorMsg) Error() string { return e.err.Error() }
 
+// getAssignments gets ALL the assignments from eclass,
+// even excluded  ones, we filter them out later
 func getAssignments() tea.Msg {
 	log.Print("Loading assignments from eclass..")
 	opts, creds, err := config.Import()
@@ -287,12 +260,15 @@ func getAssignments() tea.Msg {
 		return errorMsg{err}
 	}
 
-	flags.Read(opts, creds)
-
 	err = config.Ensure(opts, creds)
 	if err != nil {
 		return errorMsg{err}
 	}
+
+	// get ALL assignments
+	opts.ExcludedAssignments = make(map[string][]string)
+	opts.ExcludedCourses = make(map[string]struct{})
+	opts.IncludeExpired = true
 
 	a, err := assignment.Get(opts, creds)
 	if err != nil {
@@ -320,7 +296,7 @@ func mockGetAssignments() tea.Msg {
 			},
 			Title:    "Course #1",
 			Deadline: time.Now(),
-			IsSent:   false,
+			IsSent:   true,
 		},
 		{
 			ID: "A2",
