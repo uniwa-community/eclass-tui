@@ -52,13 +52,9 @@ func updateConfiguration(o config.Options) {
 }
 
 func main() {
-	opts, creds, err := config.Import()
+	conf, err := config.ImportDefault()
 	if err != nil {
-		log.Fatal(err)
-	}
-	conf := config.Config{
-		Credentials: *creds,
-		Options:     *opts,
+        log.Fatal(fmt.Errorf("error importing user config: %v", err))
 	}
 
 	jar, err := cookiejar.New(nil)
@@ -94,7 +90,7 @@ func main() {
         }
 	}
 
-	m := NewList(conf, client)
+	m := NewList(*conf, client)
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
