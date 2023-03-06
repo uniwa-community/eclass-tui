@@ -282,7 +282,10 @@ func (m listModel) getAssignmentsCmd() tea.Cmd {
 }
 
 func getAllAssignments(session http.Client, creds auth.Credentials, domain string) tea.Msg {
-	opts := &config.Options{
+    conf := config.Config {
+        Credentials: creds,
+
+        Options: config.Options {
 		PlainText:           false,
 		IncludeExpired:      true,
 		ExportICS:           false,
@@ -291,13 +294,14 @@ func getAllAssignments(session http.Client, creds auth.Credentials, domain strin
 			ExcludedCourses: make(map[string]struct{}),
 			BaseDomain:      domain,
 		},
-	}
+	},
+    }
 
-	err := config.Ensure(opts, &creds)
+	err := config.Ensure(&conf)
 	if err != nil {
 		return errorMsg{err}
 	}
-	ser, err := assignment.NewService(context.Background(), opts, creds, &session)
+	ser, err := assignment.NewService(context.Background(), conf, &session)
 	if err != nil {
 		log.Fatal(err)
 	}
