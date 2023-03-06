@@ -30,12 +30,6 @@ type listModel struct {
 }
 
 func NewList(conf config.Config, session *http.Client) listModel {
-    if session != nil {
-        log.Println("session ok")
-    } else {
-        log.Fatal("session is fucked")
-    }
-
 	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
 		conf.Options.ExcludedAssignments = make(map[string][]string)
 	}
@@ -276,6 +270,11 @@ func getAssignments(service assignment.Service) tea.Msg {
 }
 
 func (m listModel) getAssignmentsCmd() tea.Cmd {
+    if m.testing {
+        return func() tea.Msg {
+            return mockGetAssignments()
+        }
+    }
 	return func() tea.Msg {
 		return getAllAssignments(m.session, m.config.Credentials, m.config.Options.BaseDomain)
 	}
