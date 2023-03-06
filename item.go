@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/Huray-hub/eclass-utils/assignments/assignment"
+	"github.com/Huray-hub/eclass-utils/assignment"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
