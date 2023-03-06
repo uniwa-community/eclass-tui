@@ -3,14 +3,15 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
 	"path/filepath"
 
-	"github.com/Huray-hub/eclass-utils/assignments/config"
-	auth "github.com/Huray-hub/eclass-utils/authentication"
+	"github.com/Huray-hub/eclass-utils/assignment/config"
+	"github.com/Huray-hub/eclass-utils/auth"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -60,43 +61,42 @@ func main() {
 		Options:     *opts,
 	}
 
-	{
-		auth_creds := auth.Credentials{
-			Username: "asdf",
-			Password: "asdf",
-		}
-
-		jar, err := cookiejar.New(nil)
-		if err != nil {
-			return
-		}
-
-		client := &http.Client{
-			Jar: jar,
-		}
-		err = auth.Login(context.Background(), "https://"+conf.Options.BaseDomain, auth_creds, client)
-		if err != nil {
-			log.Fatal(err)
-		}
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return
 	}
-    logged_in := false // TODO: find out how to check if we logged in correctly
-    var ret tea.Model
 
-    if ! logged_in {
-        p := tea.NewProgram(NewForm())
-        if ret, err = p.Run(); err != nil {
-            log.Fatalf("Alas, there's been an error: %v", err)
+	client := &http.Client{
+		Jar: jar,
+	}
+
+	// attempt to login
+    log.Println("Attempting login with", conf.Credentials.Username, "|", conf.Credentials.Password, "|", conf.Options.BaseDomain)
+	client, err = auth.Login(context.Background(), "https://"+conf.Options.BaseDomain, conf.Credentials, client)
+	// if we failed ask user for credentials
+	if err != nil {
+        log.Println(fmt.Errorf("login failed (asking user now): %v", err))
+		p := tea.NewProgram(NewForm())
+		f, err := p.Run()
+		if err != nil {
+			log.Fatalf("Alas, there's been an error: %v", err)
+		}
+
+		login_form := f.(form) // NOTE: should always succeed
+		conf.Options.BaseDomain = login_form.fields[Domain].Value()
+        conf.Credentials.Username = login_form.fields[Username].Value()
+		conf.Credentials.Password = login_form.fields[Password].Value()
+
+        log.Println("Attempting login with", conf.Credentials.Username, conf.Credentials.Password, conf.Options.BaseDomain)
+        client, err = auth.Login(context.Background(), "https://"+conf.Options.BaseDomain, conf.Credentials, client)
+        if err != nil || client == nil {
+            log.Fatal(fmt.Errorf("unexpected login failure: %v", err))
         }
+	}
 
-        login_form := ret.(form) // NOTE: should always succeed
-        opts.BaseDomain = login_form.fields[0].Value()
-        conf.Credentials.Username = login_form.fields[1].Value()
-        conf.Credentials.Password = login_form.fields[2].Value()
-    }
-
-
-	m := NewList(conf)
+	m := NewList(conf, client)
 	p := tea.NewProgram(m)
+
 	if _, err := p.Run(); err != nil {
 		log.Fatalf("Alas, there's been an error: %v", err)
 	}

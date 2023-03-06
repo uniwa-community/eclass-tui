@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
-	"github.com/Huray-hub/eclass-utils/assignments/assignment"
-	"github.com/Huray-hub/eclass-utils/assignments/config"
-	"github.com/Huray-hub/eclass-utils/assignments/course"
+	"github.com/Huray-hub/eclass-utils/assignment"
+	"github.com/Huray-hub/eclass-utils/assignment/config"
+	"github.com/Huray-hub/eclass-utils/auth"
+	"github.com/Huray-hub/eclass-utils/course"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
@@ -23,29 +26,39 @@ type listModel struct {
 	keys       keyBinds
 	config     config.Config
 	testing    bool
+	session    http.Client
 }
 
-func NewList(config config.Config) listModel {
-	if config.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
-		config.Options.ExcludedAssignments = make(map[string][]string)
+func NewList(conf config.Config, session *http.Client) listModel {
+    if session != nil {
+        log.Println("session ok")
+    } else {
+        log.Fatal("session is fucked")
+    }
+
+	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
+		conf.Options.ExcludedAssignments = make(map[string][]string)
 	}
-	if config.Options.ExcludedCourses == nil {
-		config.Options.ExcludedCourses = make(map[string]struct{})
+	if conf.Options.ExcludedCourses == nil {
+		conf.Options.ExcludedCourses = make(map[string]struct{})
 	}
 
 	m := listModel{
 		list:       list.New([]list.Item{}, itemDelegate{}, 0, 0),
 		showHidden: false,
 		keys:       newKeyBinds(),
-		config:     config,
+		config:     conf,
+		session:    *session,
 	}
+
 	m.list.Title = "Εργασίες"
 	m.list.SetShowStatusBar(true)
 	statusTime := time.Second * 2
 	m.list.StatusMessageLifetime = statusTime
 	m.list.SetStatusBarItemName("Εργασία", "Εργασίες")
 	m.list.SetSpinner(spinner.Dot)
-	// TODO: this looks like a bubbletea bug, spinner's style is unused in list/list.go
+
+	// BUG: this looks like a bubbletea bug, spinner's style is unused in list/list.go
 	// m.list.Styles.Spinner = lip.NewStyle().Background(uniwaOrange).Border(lip.DoubleBorder())
 	m.list.StartSpinner()
 	m.list.AdditionalShortHelpKeys = func() []key.Binding {
@@ -96,16 +109,9 @@ func newKeyBinds() keyBinds {
 func (m listModel) Init() tea.Cmd {
 	return tea.Batch(
 		m.list.StartSpinner(),
-		getAssignments,
-		mockGetAssignments,
+		m.getAssignmentsCmd(),
 		updateTitleCmd,
 	)
-}
-
-func (m listModel) logWhileTesting(format string, a ...any) {
-	if m.testing {
-		fmt.Printf(format, a...)
-	}
 }
 
 var docStyle = lip.NewStyle().Margin(1, 2)
@@ -129,7 +135,6 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok {
 				log.Print("Type Assertion failed")
 			}
-			// toggle excluded
 			excluded := false
 			for excluded_assignment_ID := range m.config.Options.ExcludedAssignments {
 				if i.assignment.ID == excluded_assignment_ID {
@@ -170,7 +175,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
 		case key.Matches(msg, m.keys.toggleIncludeExpired):
 			m.config.Options.IncludeExpired = !m.config.Options.IncludeExpired
-            m.logWhileTesting("%t", m.config.Options.IncludeExpired)
+			m.logWhileTesting("%t", m.config.Options.IncludeExpired)
 			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
 		}
 	case tea.WindowSizeMsg:
@@ -186,15 +191,10 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			hide := false
 			if item.shouldHideAssignment(m.config.Options.ExcludedAssignments) {
 				hide = true
-			}
-
-			if item.shouldHideCourse(m.config.Options.ExcludedCourses) {
+			} else if item.shouldHideCourse(m.config.Options.ExcludedCourses) {
 				hide = true
-			}
-
-			// if the deadline has passed and we don't include expired OR we show hidden
-			// hide this item
-			if item.shouldHideExpired() && (!m.config.Options.IncludeExpired || m.showHidden) {
+			} else if item.shouldHideExpired() && (!m.config.Options.IncludeExpired || m.showHidden) {
+                // if the deadline has passed and we don't include expired OR we show hidden, hide this item
 				hide = true
 			}
 
@@ -211,9 +211,7 @@ func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cache = append(m.cache, it.(item))
 		}
 		log.Print("Loaded assignments")
-		if len(msg) > 5 { // NOTE: mockGetAssignments returns 5, this is a hack
-			m.list.StopSpinner()
-		}
+		m.list.StopSpinner()
 		statusCmd := m.list.NewStatusMessage("Φόρτωση επιτυχής!")
 		return m, tea.Batch(updateItemsCmd, statusCmd)
 	case updateTitleMsg:
@@ -260,26 +258,51 @@ func errorCmd(err error) tea.Cmd {
 
 func (e errorMsg) Error() string { return e.err.Error() }
 
-// getAssignments gets ALL the assignments from eclass,
-// even excluded  ones, we filter them out later
-func getAssignments() tea.Msg {
-	log.Print("Loading assignments from eclass..")
-	opts, creds, err := config.Import()
+func getAssignments(service assignment.Service) tea.Msg {
+	a, err := service.FetchAssignments(context.Background())
+	if err != nil {
+		log.Println(err)
+	}
+
+	var items = make([]list.Item, len(a))
+
+	for i, ass := range a {
+		items[i] = item{
+			assignment: ass,
+		}
+	}
+
+	return itemsMsg(items)
+}
+
+func (m listModel) getAssignmentsCmd() tea.Cmd {
+	return func() tea.Msg {
+		return getAllAssignments(m.session, m.config.Credentials, m.config.Options.BaseDomain)
+	}
+}
+
+func getAllAssignments(session http.Client, creds auth.Credentials, domain string) tea.Msg {
+	opts := &config.Options{
+		PlainText:           false,
+		IncludeExpired:      true,
+		ExportICS:           false,
+		ExcludedAssignments: make(map[string][]string),
+		Options: course.Options{
+			ExcludedCourses: make(map[string]struct{}),
+			BaseDomain:      domain,
+		},
+	}
+
+	err := config.Ensure(opts, &creds)
 	if err != nil {
 		return errorMsg{err}
 	}
-
-	err = config.Ensure(opts, creds)
+	ser, err := assignment.NewService(context.Background(), opts, creds, &session)
 	if err != nil {
-		return errorMsg{err}
+		log.Fatal(err)
 	}
 
-	// get ALL assignments
-	opts.ExcludedAssignments = make(map[string][]string)
-	opts.ExcludedCourses = make(map[string]struct{})
-	opts.IncludeExpired = true
-
-	a, err := assignment.Get(opts, creds)
+	a, err := ser.FetchAssignments(context.Background())
 	if err != nil {
 		return errorMsg{err}
 	}
@@ -341,3 +364,10 @@ func mockGetAssignments() tea.Msg {
 
 	return itemsMsg(items)
 }
+
+func (m listModel) logWhileTesting(format string, a ...any) {
+	if m.testing {
+		fmt.Printf(format, a...)
+	}
+}
+
