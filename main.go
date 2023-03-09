@@ -72,7 +72,7 @@ func main() {
 	// if we failed ask user for credentials
 	if err != nil {
         log.Println(fmt.Errorf("login failed (asking user now): %v", err))
-		p := tea.NewProgram(NewForm())
+		p := tea.NewProgram(NewForm(err, *conf))
 		f, err := p.Run()
 		if err != nil {
 			log.Fatalf("Alas, there's been an error: %v", err)

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Huray-hub/eclass-utils/assignment/config"
 	"github.com/Huray-hub/eclass-utils/auth"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -20,7 +21,8 @@ type form struct {
 	style         lip.Style
 	selectedInput int
 	session       *http.Client
-	loginFailed   bool
+	loginFailed   int
+	reason        error
 }
 
 const (
@@ -98,19 +100,22 @@ func validateLength(in string, what string) error {
 	return nil
 }
 
-func NewForm() form {
+func NewForm(e error, conf config.Config) form {
 	username := textinput.New()
 	username.Prompt = "Username: "
+    username.SetValue(conf.Credentials.Username)
 	username.Validate = validateUsername
 
 	password := textinput.New()
 	password.Prompt = "Password: "
+    username.SetValue(conf.Credentials.Password)
 	password.Validate = validatePassword
 	password.EchoCharacter = '*'
 	password.EchoMode = textinput.EchoPassword
 
 	domain := textinput.New()
 	domain.Validate = validateDomain
+    domain.SetValue(conf.Options.BaseDomain)
 	domain.Prompt = "Domain:   "
 	domain.Placeholder = "eclass.<domain>.<xyz>"
 
@@ -159,7 +164,7 @@ func (f form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		f.style.Height(msg.Height)
 		f.style.Width(msg.Width)
 	case loginFail:
-		f.loginFailed = true
+		f.loginFailed++
 		log.Println("Login failed!")
 	}
 
@@ -248,9 +253,14 @@ func (f form) View() string {
 		}
 	}
 
-	if f.loginFailed {
-		warnings = append(warnings, warningStyle.Render("Failed to login!"))
-	}
+    var loginFailed_msg string
+	if f.loginFailed == 1 {
+        loginFailed_msg = "Failed to login!"
+	} else if f.loginFailed > 1 {
+        loginFailed_msg = fmt.Sprintf("Failed to login(%d)!", f.loginFailed - 1)
+
+    }
+		warnings = append(warnings, warningStyle.Render(loginFailed_msg))
 
 	str := lip.JoinVertical(lip.Left,
 		boxStyle.Render(
