@@ -62,7 +62,7 @@ func TestIncludeExpired(t *testing.T) {
 	if err != nil {
 		t.Errorf("error creating cookie jar: %v", err)
 	}
-	m := NewList(conf, &http.Client{
+	m := NewCourseList(conf, &http.Client{
 		Jar: jar,
 	})
 	m.testing = true

@@ -33,16 +33,23 @@ type window struct {
 	login form
 	list  courseList
 	state WindowState
+    conf config.Config
+    session *http.Client
 }
 
 func NewWindow(state WindowState, conf config.Config, session *http.Client, err error) window {
-	w := window{state: state}
+	w := window{
+        state: state,
+        conf: conf,
+        session: session,
+    }
 	switch w.state {
 	case Login:
 		w.login = NewForm(err, conf)
 	case List:
-        log.Println("Window shows list")
-		w.list = NewList(conf, session)
+		log.Println("Window shows list")
+		w.list = NewCourseList(conf, session)
+		log.Println("after")
 	}
 
 	return w
@@ -53,20 +60,30 @@ type loginSuccess struct {
 	session *http.Client
 }
 
-func (window) Init() tea.Cmd {
+func (w window) Init() tea.Cmd {
+    // if we start out in list mode,
+    // emit a loginSuccess event with the conf and session we have
+	if w.state == List {
+		return func() tea.Msg {
+			return loginSuccess{
+				conf:    w.conf,
+				session: w.session,
+			}
+		}
+	}
 	return nil
 }
 func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case loginSuccess:
 		w.state = List
-		w.list = NewList(msg.conf, msg.session)
-    case tea.KeyMsg:
-        switch key := msg.String(); key {
-        case "ctrl+c":
-            log.Println("quit")
-            return w, tea.Quit
-        }
+		w.list = NewCourseList(msg.conf, msg.session)
+	case tea.KeyMsg:
+		switch key := msg.String(); key {
+		case "ctrl+c":
+			log.Println("quit")
+			return w, tea.Quit
+		}
 	}
 
 	switch w.state {
