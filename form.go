@@ -4,9 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
-	"time"
 
 	"github.com/Huray-hub/eclass-utils/assignment/config"
 	"github.com/Huray-hub/eclass-utils/auth"
@@ -20,7 +18,7 @@ type form struct {
 	submit        button
 	style         lip.Style
 	selectedInput int
-	session       *http.Client
+	conf       config.Config
 	loginFailed   int
 	reason        error
 }
@@ -103,21 +101,23 @@ func validateLength(in string, what string) error {
 func NewForm(e error, conf config.Config) form {
 	username := textinput.New()
 	username.Prompt = "Username: "
-    username.SetValue(conf.Credentials.Username)
+	username.SetValue(conf.Credentials.Username)
 	username.Validate = validateUsername
+    username.Placeholder = " Όνομα χρήστη (Username)" // BUG: without space before 'Ό', garbage is printed
 
 	password := textinput.New()
 	password.Prompt = "Password: "
-    username.SetValue(conf.Credentials.Password)
+	username.SetValue(conf.Credentials.Password)
 	password.Validate = validatePassword
 	password.EchoCharacter = '*'
 	password.EchoMode = textinput.EchoPassword
+    password.Placeholder = " Συνθηματικό (Password)" // BUG: without space before 'Σ', garbage is printed
 
 	domain := textinput.New()
 	domain.Validate = validateDomain
-    domain.SetValue(conf.Options.BaseDomain)
+	domain.SetValue(conf.Options.BaseDomain)
 	domain.Prompt = "Domain:   "
-	domain.Placeholder = "eclass.<domain>.<xyz>"
+	domain.Placeholder = " eclass.<domain>.<xyz>"
 
 	return form{
 		fields: []textinput.Model{
@@ -128,6 +128,8 @@ func NewForm(e error, conf config.Config) form {
 		submit:        NewButton("Submit"),
 		style:         defaultFormStyle,
 		selectedInput: 0,
+        reason: e,
+        conf: conf,
 	}
 }
 
@@ -157,8 +159,6 @@ func (f form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Println("Attempting login..")
 				return f, f.loginCmd
 			}
-		case "ctrl+c":
-			log.Fatal("Keyboard SIGINT")
 		}
 	case tea.WindowSizeMsg:
 		f.style.Height(msg.Height)
@@ -185,27 +185,31 @@ func startSpinnerCmd() tea.Msg {
 }
 
 func (f *form) loginCmd() tea.Msg {
-	creds := auth.Credentials{
+    // clear our initial reason we asked for creds again
+    f.reason = nil
+
+    // update config
+	f.conf.Credentials = auth.Credentials{
 		Username: f.fields[Username].Value(),
 		Password: f.fields[Password].Value(),
 	}
+    f.conf.Options.BaseDomain = f.fields[Domain].Value()
 
-	log.Println("Attempting login with", creds.Username, creds.Password, f.fields[Domain].Value())
-
-	client, err := auth.Login(
+	client, err := auth.Session(
 		context.Background(),
 		"https://"+f.fields[Domain].Value(),
-		creds,
+		f.conf.Credentials,
 		nil,
-	)
-
+    )
 	if err != nil || client == nil {
 		return loginFail{fmt.Errorf("login failed: %v", err)}
 	}
-	time.Sleep(time.Second * 2)
 
 	log.Println("Login success!")
-	return tea.Quit()
+	return loginSuccess{
+        conf: f.conf,
+        session: client,
+    }
 }
 
 func (f *form) updateFields(msg tea.Msg) tea.Cmd {
@@ -214,7 +218,6 @@ func (f *form) updateFields(msg tea.Msg) tea.Cmd {
 	for i, field := range f.fields {
 		if i == f.selectedInput {
 			field.Focus()
-			field.SetValue(field.Value())
 		} else {
 			field.Blur()
 		}
@@ -253,14 +256,17 @@ func (f form) View() string {
 		}
 	}
 
-    var loginFailed_msg string
+	var loginFailed_msg string
 	if f.loginFailed == 1 {
-        loginFailed_msg = "Failed to login!"
+		loginFailed_msg = "Failed to login!"
 	} else if f.loginFailed > 1 {
-        loginFailed_msg = fmt.Sprintf("Failed to login(%d)!", f.loginFailed - 1)
+		loginFailed_msg = fmt.Sprintf("Failed to login(%d)!", f.loginFailed-1)
 
+	}
+    if f.reason != nil {
+        warnings = append(warnings, warningStyle.Render(f.reason.Error()))
     }
-		warnings = append(warnings, warningStyle.Render(loginFailed_msg))
+	warnings = append(warnings, warningStyle.Render(loginFailed_msg))
 
 	str := lip.JoinVertical(lip.Left,
 		boxStyle.Render(

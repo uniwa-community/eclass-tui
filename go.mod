@@ -3,9 +3,9 @@ module eclass-tui
 go 1.19
 
 require (
-	github.com/Huray-hub/eclass-utils/assignment v0.0.0-20230306023352-a1a3582649f0
-	github.com/Huray-hub/eclass-utils/auth v0.0.0-20230306023352-a1a3582649f0
-	github.com/Huray-hub/eclass-utils/course v0.0.0-20230305011325-d758201f03ed
+	github.com/Huray-hub/eclass-utils/assignment v0.0.0-20230315234220-988e8bb14474
+	github.com/Huray-hub/eclass-utils/auth v0.0.0-20230315234220-988e8bb14474
+	github.com/Huray-hub/eclass-utils/course v0.0.0-20230315234220-988e8bb14474
 	github.com/charmbracelet/bubbles v0.15.0
 	github.com/charmbracelet/bubbletea v0.23.2
 	github.com/charmbracelet/lipgloss v0.6.0
@@ -13,7 +13,7 @@ require (
 
 require (
 	github.com/Huray-hub/eclass-utils v0.8.0 // indirect
-	github.com/Huray-hub/eclass-utils/authentication v0.0.0-20230228204259-d4dece8990ee // indirect
+	github.com/Huray-hub/eclass-utils/assignments v0.0.0-20230304232245-b1834b614ef9 // indirect
 	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -32,11 +32,11 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/sahilm/fuzzy v0.1.0 // indirect
-	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
 	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 	golang.org/x/term v0.6.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
