@@ -58,13 +58,7 @@ var tests = []test{
 
 func TestIncludeExpired(t *testing.T) {
 
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		t.Errorf("error creating cookie jar: %v", err)
-	}
-	m := NewCourseList(conf, &http.Client{
-		Jar: jar,
-	})
+	m := NewCourseList()
 	m.testing = true
 
 	for _, test := range tests {
@@ -72,6 +66,12 @@ func TestIncludeExpired(t *testing.T) {
 		in := strings.NewReader(test.inputs)
 
 		p := tea.NewProgram(m, tea.WithoutRenderer(), tea.WithInput(in))
+        go func() {
+            p.Send(loginSuccess{
+                conf: conf,
+                session: nil,
+            })
+        }()
 
 		result := withRedirectStdout(func() {
 			if _, err := p.Run(); err != nil {
