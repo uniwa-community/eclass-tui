@@ -17,7 +17,6 @@ tidy:
 	@touch tidy
 
 test:
-	cd app/
 	CC=clangd go test . # HACK: using clang to workaround local gcc issue
 
 clean:
