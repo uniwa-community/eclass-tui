@@ -29,20 +29,11 @@ type courseList struct {
 	session    http.Client
 }
 
-func NewCourseList(conf config.Config, session *http.Client) courseList {
-	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
-		conf.Options.ExcludedAssignments = make(map[string][]string)
-	}
-	if conf.Options.ExcludedCourses == nil {
-		conf.Options.ExcludedCourses = make(map[string]struct{})
-	}
-
+func NewCourseList() courseList {
 	m := courseList{
 		list:       list.New([]list.Item{}, itemDelegate{}, 0, 0),
 		showHidden: false,
 		keys:       newKeyBinds(),
-		config:     conf,
-		session:    *session,
 	}
 
 	m.list.Title = "Εργασίες"
@@ -188,6 +179,8 @@ func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cl.list.Title = title
 		return cl, nil
 	case loginSuccess:
+        cl.config = msg.conf
+        cl.session = *msg.session
 		return cl, tea.Batch(
 			cl.list.StartSpinner(),
 			cl.getAssignmentsCmd(),
@@ -280,7 +273,7 @@ func getAllAssignments(session http.Client, creds auth.Credentials, domain strin
 
 	ser, err := assignment.NewService(context.Background(), conf, &session)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	a, err := ser.FetchAssignments(context.Background())

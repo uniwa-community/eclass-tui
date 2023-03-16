@@ -19,7 +19,6 @@ type form struct {
 	selectedInput int
 	conf       config.Config
 	loginFailed   int
-	reason        error
 }
 
 const (
@@ -96,7 +95,7 @@ func validateLength(in string, what string) error {
 	return nil
 }
 
-func NewForm(e error, conf config.Config) form {
+func NewForm(conf config.Config) form {
 	username := textinput.New()
 	username.Prompt = "Username: "
 	username.SetValue(conf.Credentials.Username)
@@ -125,7 +124,6 @@ func NewForm(e error, conf config.Config) form {
 		},
 		style:         defaultFormStyle,
 		selectedInput: 0,
-        reason: e,
         conf: conf,
 	}
 }
@@ -160,6 +158,8 @@ func (f form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		f.style.Height(msg.Height)
 		f.style.Width(msg.Width)
+    case loginSuccess:
+        log.Println("Login success!")
 	case loginFail:
 		f.loginFailed++
 		log.Println("Login failed!")
@@ -182,8 +182,6 @@ func startSpinnerCmd() tea.Msg {
 }
 
 func (f *form) loginCmd() tea.Msg {
-    // clear our initial reason we asked for creds again
-    f.reason = nil
 
     // update config
 	f.conf.Credentials = auth.Credentials{
@@ -202,7 +200,6 @@ func (f *form) loginCmd() tea.Msg {
 		return loginFail{fmt.Errorf("login failed: %v", err)}
 	}
 
-	log.Println("Login success!")
 	return loginSuccess{
         conf: f.conf,
         session: client,
@@ -255,9 +252,6 @@ func (f form) View() string {
 		loginFailed_msg = fmt.Sprintf("Failed to login(%d)!", f.loginFailed-1)
 
 	}
-    if f.reason != nil {
-        warnings = append(warnings, warningStyle.Render(f.reason.Error()))
-    }
 	warnings = append(warnings, warningStyle.Render(loginFailed_msg))
 
 	str := lip.JoinVertical(lip.Left,

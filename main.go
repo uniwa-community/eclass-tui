@@ -16,14 +16,14 @@ import (
 func init() {
 	homeCache, err := os.UserCacheDir()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Panic(err.Error())
 	}
 
 	path := filepath.Join(homeCache, "eclass-tui")
 	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		err = os.MkdirAll(path, 0755)
 		if err != nil {
-			log.Fatal(err)
+			log.Panic(err)
 		}
 	}
 
@@ -33,7 +33,7 @@ func init() {
 		0644,
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Panic(err)
 	}
 
 	log.SetOutput(file)
@@ -42,26 +42,32 @@ func init() {
 func main() {
 	conf, err := config.ImportDefault()
 	if err != nil {
-        log.Fatal(fmt.Errorf("error importing user config: %v", err))
+        log.Panic(fmt.Errorf("error importing user config: %v", err))
 	}
 
-    var state WindowState
+	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
+		conf.Options.ExcludedAssignments = make(map[string][]string)
+	}
+	if conf.Options.ExcludedCourses == nil {
+		conf.Options.ExcludedCourses = make(map[string]struct{})
+	}
+
+
+    state := List
 	// attempt to login
-    ctx, cancel := context.WithCancel(context.Background())
+    ctx, cancelSession := context.WithCancel(context.Background())
     client, err := auth.Session(ctx, "https://"+conf.Options.BaseDomain, conf.Credentials, nil)
 	// if we failed ask user for credentials
 	if err != nil {
-        cancel()
+        cancelSession()
         state = Login
-	} else {
-        state = List
-    }
+	}
 
 	w := NewWindow(state, *conf, client, err)
 	p := tea.NewProgram(w)
 
 	if _, err := p.Run(); err != nil {
-		log.Fatalf("Alas, there's been an error: %v", err)
+		log.Panicf("Alas, there's been an error: %v", err)
 	}
 
 }
