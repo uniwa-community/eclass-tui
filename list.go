@@ -29,7 +29,7 @@ type courseList struct {
 	session    http.Client
 }
 
-func NewList(conf config.Config, session *http.Client) courseList {
+func NewCourseList(conf config.Config, session *http.Client) courseList {
 	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
 		conf.Options.ExcludedAssignments = make(map[string][]string)
 	}
@@ -101,6 +101,7 @@ func newKeyBinds() keyBinds {
 }
 
 func (cl courseList) Init() tea.Cmd {
+    // not called unless this is the main model
 	return tea.Batch(
 		cl.list.StartSpinner(),
 		cl.getAssignmentsCmd(),
