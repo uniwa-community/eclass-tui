@@ -17,7 +17,7 @@ tidy:
 	@touch tidy
 
 test:
-	CC=clangd go test . # HACK: using clang to workaround local gcc issue
+	go test .
 
 clean:
 	rm -f ./eclass-tui ./tidy
