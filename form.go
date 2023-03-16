@@ -15,7 +15,6 @@ import (
 
 type form struct {
 	fields        []textinput.Model
-	submit        button
 	style         lip.Style
 	selectedInput int
 	conf       config.Config
@@ -27,7 +26,6 @@ const (
 	Username = iota
 	Password
 	Domain
-	Submit
 )
 
 var defaultFormStyle = lip.NewStyle().
@@ -125,7 +123,6 @@ func NewForm(e error, conf config.Config) form {
 			Password: password,
 			Domain:   domain,
 		},
-		submit:        NewButton("Submit"),
 		style:         defaultFormStyle,
 		selectedInput: 0,
         reason: e,
@@ -145,7 +142,7 @@ func (f form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := msg.String()
 		switch key {
 		case "tab":
-			if f.selectedInput != Submit {
+			if f.selectedInput != Domain {
 				f.selectedInput++
 			}
 		case "shift+tab":
@@ -153,7 +150,7 @@ func (f form) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				f.selectedInput--
 			}
 		case "enter":
-			if f.selectedInput != Submit {
+			if f.selectedInput != Domain {
 				f.selectedInput++
 			} else if f.validate() {
 				log.Println("Attempting login..")
@@ -218,18 +215,13 @@ func (f *form) updateFields(msg tea.Msg) tea.Cmd {
 	for i, field := range f.fields {
 		if i == f.selectedInput {
 			field.Focus()
+            field.SetValue(field.Value()) // HACK: yes
 		} else {
 			field.Blur()
 		}
 		f.fields[i], cmds[i] = field.Update(msg)
 	}
 
-	if f.selectedInput == 3 {
-		f.submit.Focus()
-	} else {
-		f.submit.Blur()
-	}
-	f.submit, cmds[Submit] = f.submit.Update(msg)
 
 	return tea.Batch(cmds...)
 }
@@ -272,7 +264,6 @@ func (f form) View() string {
 		boxStyle.Render(
 			lip.JoinVertical(lip.Left, inputsBoxes...),
 		),
-		f.submit.View(),
 		boxStyle.Render(
 			lip.JoinVertical(lip.Left, warnings...),
 		),
