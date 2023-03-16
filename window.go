@@ -9,14 +9,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-type WindowState int
+type ActiveWindow int
 
 const (
-	Login WindowState = iota + 1
+	Login ActiveWindow = iota + 1
 	List
 )
 
-func (s WindowState) String() string {
+func (s ActiveWindow) String() string {
 	switch s {
 	case 0:
 		return "Uninitialized"
@@ -32,38 +32,34 @@ func (s WindowState) String() string {
 type window struct {
 	login form
 	list  courseList
-	state WindowState
+	active ActiveWindow
     conf config.Config
     session *http.Client
 }
 
-func NewWindow(state WindowState, conf config.Config, session *http.Client, err error) window {
+func NewWindow(win ActiveWindow, conf config.Config, session *http.Client, err error) window {
 	w := window{
-        state: state,
+        active: win,
         conf: conf,
         session: session,
     }
-	switch w.state {
-	case Login:
-		w.login = NewForm(err, conf)
-	case List:
-		log.Println("Window shows list")
-		w.list = NewCourseList(conf, session)
-		log.Println("after")
-	}
+
+    if w.active == Login {
+		w.login = NewForm(conf)
+    }
+    w.list = NewCourseList()
 
 	return w
 }
 
+// used to set config and session of courseList
 type loginSuccess struct {
 	conf    config.Config
 	session *http.Client
 }
 
 func (w window) Init() tea.Cmd {
-    // if we start out in list mode,
-    // emit a loginSuccess event with the conf and session we have
-	if w.state == List {
+	if w.active == List {
 		return func() tea.Msg {
 			return loginSuccess{
 				conf:    w.conf,
@@ -76,8 +72,7 @@ func (w window) Init() tea.Cmd {
 func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case loginSuccess:
-		w.state = List
-		w.list = NewCourseList(msg.conf, msg.session)
+		w.active = List
 	case tea.KeyMsg:
 		switch key := msg.String(); key {
 		case "ctrl+c":
@@ -86,7 +81,7 @@ func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	switch w.state {
+	switch w.active {
 	case Login:
 		l, cmd := w.login.Update(msg)
 		w.login = l.(form)
@@ -96,19 +91,19 @@ func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.list = l.(courseList)
 		return w, cmd
 	default:
-		log.Fatal(fmt.Errorf("window state %s", w.state))
+		log.Panic(fmt.Errorf("window state %s", w.active))
 		return w, nil // unreachable ?
 	}
 }
 
 func (w window) View() string {
-	switch w.state {
+	switch w.active {
 	case Login:
 		return w.login.View()
 	case List:
 		return w.list.View()
 	default:
-		log.Fatal(fmt.Errorf("window state %s", w.state))
+		log.Panic(fmt.Errorf("window state %s", w.active))
 		return "" // unreachable
 	}
 }
