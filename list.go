@@ -19,7 +19,7 @@ import (
 	lip "github.com/charmbracelet/lipgloss"
 )
 
-type listModel struct {
+type courseList struct {
 	list       list.Model
 	cache      []item
 	showHidden bool
@@ -29,7 +29,7 @@ type listModel struct {
 	session    http.Client
 }
 
-func NewList(conf config.Config, session *http.Client) listModel {
+func NewList(conf config.Config, session *http.Client) courseList {
 	if conf.Options.ExcludedAssignments == nil { // FIX: should't these be already made?
 		conf.Options.ExcludedAssignments = make(map[string][]string)
 	}
@@ -37,7 +37,7 @@ func NewList(conf config.Config, session *http.Client) listModel {
 		conf.Options.ExcludedCourses = make(map[string]struct{})
 	}
 
-	m := listModel{
+	m := courseList{
 		list:       list.New([]list.Item{}, itemDelegate{}, 0, 0),
 		showHidden: false,
 		keys:       newKeyBinds(),
@@ -95,155 +95,138 @@ func newKeyBinds() keyBinds {
 		),
 		toggleIncludeExpired: key.NewBinding(
 			key.WithKeys("i", "ι"),
-			key.WithHelp("i|ι", "Include expired"), // TODO: greek help description
+			key.WithHelp("i|ι", "Συμπερήληψη εκπρόθεσμων"),
 		),
 	}
 }
 
-func (m listModel) Init() tea.Cmd {
+func (cl courseList) Init() tea.Cmd {
 	return tea.Batch(
-		m.list.StartSpinner(),
-		m.getAssignmentsCmd(),
+		cl.list.StartSpinner(),
+		cl.getAssignmentsCmd(),
 		updateTitleCmd,
 	)
 }
 
 var docStyle = lip.NewStyle().Margin(1, 2)
 
-func (m listModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-
+func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch {
-		case key.Matches(msg, m.keys.saveConfig):
-			// NOTE: not merged upstream yet
+		case key.Matches(msg, cl.keys.saveConfig):
+			// TODO: this
 
 			// err := config.Export(m.config.Options, m.config.Credentials)
 			// if err != nil {
 			// 	return m, errorCmd(err)
 			// }
-			cmd := m.list.NewStatusMessage("Αποθηκέυση επιτυχής! (not really)")
-			return m, cmd
-		case key.Matches(msg, m.keys.toggleHideAssignment):
-			i, ok := m.list.SelectedItem().(item)
-			if !ok {
-				log.Print("Type Assertion failed")
-			}
-			excluded := false
-			for excluded_assignment_ID := range m.config.Options.ExcludedAssignments {
-				if i.assignment.ID == excluded_assignment_ID {
-					excluded = true
-				}
-			}
+			cmd := cl.list.NewStatusMessage("Αποθηκέυση επιτυχής! (not really)")
+			return cl, cmd
+		case key.Matches(msg, cl.keys.toggleHideAssignment):
+			i := cl.list.SelectedItem().(item)
 			var statusCmd tea.Cmd
-			if excluded {
-				delete(m.config.Options.ExcludedAssignments, i.assignment.ID)
-				statusCmd = m.list.NewStatusMessage("Επανέφερες την εργασία " + i.assignment.Title + ".")
+
+			if i.shouldHideAssignment(cl.config.Options.ExcludedAssignments) {
+				delete(cl.config.Options.ExcludedAssignments, i.assignment.ID)
+				statusCmd = cl.list.NewStatusMessage("Επανέφερες την εργασία " + i.assignment.Title + ".")
 			} else {
-				m.config.Options.ExcludedAssignments[i.assignment.ID] = []string{} // HACK: uhh what do we put here again?
-				statusCmd = m.list.NewStatusMessage("Έκρυψες την εργασία " + i.assignment.Title + ".")
+				cl.config.Options.ExcludedAssignments[i.assignment.ID] = []string{}
+				statusCmd = cl.list.NewStatusMessage("Έκρυψες την εργασία " + i.assignment.Title + ".")
 			}
-			return m, tea.Batch(updateItemsCmd, statusCmd)
-		case key.Matches(msg, m.keys.toggleHideCourse):
-			i, ok := m.list.SelectedItem().(item)
-			if !ok {
-				log.Print("Type Assertion failed")
-			}
-			excluded := false
-			for excluded_course_ID := range m.config.Options.ExcludedCourses {
-				if i.assignment.Course.ID == excluded_course_ID {
-					excluded = true
-				}
-			}
+			return cl, tea.Batch(updateItemsCmd, statusCmd)
+		case key.Matches(msg, cl.keys.toggleHideCourse):
+			i := cl.list.SelectedItem().(item)
 			var statusCmd tea.Cmd
-			if excluded {
-				delete(m.config.Options.ExcludedCourses, i.assignment.Course.ID)
-				statusCmd = m.list.NewStatusMessage("Επανέφερες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
+
+			if i.shouldHideCourse(cl.config.Options.ExcludedCourses) {
+				delete(cl.config.Options.ExcludedCourses, i.assignment.Course.ID)
+				statusCmd = cl.list.NewStatusMessage("Επανέφερες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
 			} else {
-				m.config.Options.ExcludedCourses[i.assignment.Course.ID] = struct{}{}
-				statusCmd = m.list.NewStatusMessage("Έκρυψες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
+				cl.config.Options.ExcludedCourses[i.assignment.Course.ID] = struct{}{}
+				statusCmd = cl.list.NewStatusMessage("Έκρυψες τις εργασίες του μαθήματος " + i.assignment.Course.Name + ".")
 			}
-			return m, tea.Batch(updateItemsCmd, statusCmd)
-		case key.Matches(msg, m.keys.toggleHidden):
-			m.showHidden = !m.showHidden
-			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
-		case key.Matches(msg, m.keys.toggleIncludeExpired):
-			m.config.Options.IncludeExpired = !m.config.Options.IncludeExpired
-			m.logWhileTesting("%t", m.config.Options.IncludeExpired)
-			return m, tea.Batch(updateItemsCmd, updateTitleCmd)
+			return cl, tea.Batch(updateItemsCmd, statusCmd)
+		case key.Matches(msg, cl.keys.toggleHidden):
+			cl.showHidden = !cl.showHidden
+			return cl, tea.Batch(updateItemsCmd, updateTitleCmd)
+		case key.Matches(msg, cl.keys.toggleIncludeExpired):
+			cl.config.Options.IncludeExpired = !cl.config.Options.IncludeExpired
+			cl.logWhileTesting("%t", cl.config.Options.IncludeExpired)
+			return cl, tea.Batch(updateItemsCmd, updateTitleCmd)
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
-	case updateMsg:
+		cl.list.SetSize(msg.Width-h, msg.Height-v)
+	case updateItems:
 		log.Print("Update list of assignments from cache")
-		for item := range m.list.Items() { // remove all items
-			m.list.RemoveItem(item)
+		// remove all items
+		for item := range cl.list.Items() {
+			cl.list.RemoveItem(item)
 		}
-		var new_items []list.Item
-		for _, item := range m.cache {
-			hide := false
-			if item.shouldHideAssignment(m.config.Options.ExcludedAssignments) {
-				hide = true
-			} else if item.shouldHideCourse(m.config.Options.ExcludedCourses) {
-				hide = true
-			} else if item.shouldHideExpired() && (!m.config.Options.IncludeExpired || m.showHidden) {
-                // if the deadline has passed and we don't include expired OR we show hidden, hide this item
-				hide = true
-			}
-
-			// log.Println(item.assignment.ID, "hidden? ", hide, " because ", item.hideReason)
-			if hide == m.showHidden {
-				new_items = append(new_items, item)
-			}
-
-		}
-		m.list.SetItems(new_items)
-		return m, nil
-	case itemsMsg:
+		cl.list.SetItems(filterItems(cl.cache, cl.config.Options, cl.showHidden))
+		return cl, nil
+	case newItems:
 		for _, it := range msg {
-			m.cache = append(m.cache, it.(item))
+			cl.cache = append(cl.cache, it.(item))
 		}
 		log.Print("Loaded assignments")
-		m.list.StopSpinner()
-		statusCmd := m.list.NewStatusMessage("Φόρτωση επιτυχής!")
-		return m, tea.Batch(updateItemsCmd, statusCmd)
-	case updateTitleMsg:
+		cl.list.StopSpinner()
+		statusCmd := cl.list.NewStatusMessage("Φόρτωση επιτυχής!")
+		return cl, tea.Batch(updateItemsCmd, statusCmd)
+	case updateTitle:
 		var title string
-		if m.showHidden {
+		if cl.showHidden {
 			title += "Κρυμμένες εργασίες"
 		} else {
 			title += "Εργασίες"
 		}
-		if m.config.Options.IncludeExpired {
+		if cl.config.Options.IncludeExpired {
 			title += " | Εμφανίζονται Εκπρόθεσμες"
 		}
-		m.list.Title = title
-		return m, nil
+		cl.list.Title = title
+		return cl, nil
+	case loginSuccess:
+		return cl, tea.Batch(
+			cl.list.StartSpinner(),
+			cl.getAssignmentsCmd(),
+			updateTitleCmd,
+		)
 	case errorMsg:
 		log.Print(msg.err)
-		return m, nil
+		return cl, nil
 	}
 
 	var cmd tea.Cmd
-	m.list, cmd = m.list.Update(msg)
+	cl.list, cmd = cl.list.Update(msg)
 
-	return m, cmd
+	return cl, cmd
 }
 
-func (m listModel) View() string {
-	return docStyle.Render(m.list.View())
+func filterItems(items []item, opts config.Options, showHidden bool) []list.Item {
+	var new_items []list.Item
+	for _, item := range items {
+		if item.ShouldHide(opts, showHidden) {
+			new_items = append(new_items, item)
+		}
+	}
+
+	return new_items
 }
 
-type updateTitleMsg struct{}
-type writeConfigMsg struct{}
-type updateMsg struct{}
-type itemsMsg []list.Item
+func (cl courseList) View() string {
+	return docStyle.Render(cl.list.View())
+}
+
+type updateTitle struct{}
+type writeConfig struct{}
+type updateItems struct{}
+type newItems []list.Item
 type errorMsg struct{ err error }
 
-func updateTitleCmd() tea.Msg { return updateTitleMsg{} }
-func writeConfigCmd() tea.Msg { return writeConfigMsg{} }
-func updateItemsCmd() tea.Msg { return updateMsg{} }
+func updateTitleCmd() tea.Msg { return updateTitle{} }
+func writeConfigCmd() tea.Msg { return writeConfig{} }
+func updateItemsCmd() tea.Msg { return updateItems{} }
 func errorCmd(err error) tea.Cmd {
 	return func() tea.Msg {
 		return errorMsg{err}
@@ -266,40 +249,34 @@ func getAssignments(service assignment.Service) tea.Msg {
 		}
 	}
 
-	return itemsMsg(items)
+	return newItems(items)
 }
 
-func (m listModel) getAssignmentsCmd() tea.Cmd {
-    if m.testing {
-        return func() tea.Msg {
-            return mockGetAssignments()
-        }
-    }
+func (cl courseList) getAssignmentsCmd() tea.Cmd {
+	if cl.testing {
+		return mockGetAssignments
+	}
 	return func() tea.Msg {
-		return getAllAssignments(m.session, m.config.Credentials, m.config.Options.BaseDomain)
+		return getAllAssignments(cl.session, cl.config.Credentials, cl.config.Options.BaseDomain)
 	}
 }
 
 func getAllAssignments(session http.Client, creds auth.Credentials, domain string) tea.Msg {
-    conf := config.Config {
-        Credentials: creds,
+	conf := config.Config{
+		Credentials: creds,
 
-        Options: config.Options {
-		PlainText:           false,
-		IncludeExpired:      true,
-		ExportICS:           false,
-		ExcludedAssignments: make(map[string][]string),
-		Options: course.Options{
-			ExcludedCourses: make(map[string]struct{}),
-			BaseDomain:      domain,
+		Options: config.Options{
+			PlainText:           false,
+			IncludeExpired:      true,
+			ExportICS:           false,
+			ExcludedAssignments: make(map[string][]string),
+			Options: course.Options{
+				ExcludedCourses: make(map[string]struct{}),
+				BaseDomain:      domain,
+			},
 		},
-	},
-    }
-
-	err := config.Ensure(&conf)
-	if err != nil {
-		return errorMsg{err}
 	}
+
 	ser, err := assignment.NewService(context.Background(), conf, &session)
 	if err != nil {
 		log.Fatal(err)
@@ -317,7 +294,13 @@ func getAllAssignments(session http.Client, creds auth.Credentials, domain strin
 		}
 	}
 
-	return itemsMsg(items)
+	return newItems(items)
+}
+
+func (cl courseList) logWhileTesting(format string, a ...any) {
+	if cl.testing {
+		fmt.Printf(format, a...)
+	}
 }
 
 func mockGetAssignments() tea.Msg {
@@ -365,12 +348,5 @@ func mockGetAssignments() tea.Msg {
 		}
 	}
 
-	return itemsMsg(items)
+	return newItems(items)
 }
-
-func (m listModel) logWhileTesting(format string, a ...any) {
-	if m.testing {
-		fmt.Printf(format, a...)
-	}
-}
-

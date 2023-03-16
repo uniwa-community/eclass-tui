@@ -6,16 +6,30 @@ import (
 	"time"
 
 	"github.com/Huray-hub/eclass-utils/assignment"
+	"github.com/Huray-hub/eclass-utils/assignment/config"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	lip "github.com/charmbracelet/lipgloss"
 )
 
-
 type item struct {
 	assignment assignment.Assignment
 	hideReason string
+}
+
+func (i *item) ShouldHide(opts config.Options, showHidden bool) bool {
+    hide := false
+	if i.shouldHideAssignment(opts.ExcludedAssignments) {
+		hide = true
+	} else if i.shouldHideCourse(opts.ExcludedCourses) {
+		hide = true
+	} else if i.shouldHideExpired() && (!opts.IncludeExpired || showHidden) {
+		// if the deadline has passed and we don't include expired OR we show hidden, hide this item
+		hide = true
+	}
+
+	return hide == showHidden
 }
 
 func (i *item) shouldHideAssignment(excludedAssignments map[string][]string) bool {
