@@ -16,14 +16,14 @@ import (
 func init() {
 	homeCache, err := os.UserCacheDir()
 	if err != nil {
-		log.Panic(err.Error())
+        log.Fatal("error getting user cache dir:", err.Error())
 	}
 
 	path := filepath.Join(homeCache, "eclass-tui")
 	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		err = os.MkdirAll(path, 0755)
 		if err != nil {
-			log.Panic(err)
+            log.Fatal("error making path", err.Error())
 		}
 	}
 
@@ -33,7 +33,7 @@ func init() {
 		0644,
 	)
 	if err != nil {
-		log.Panic(err)
+		log.Fatal("error opening log", err.Error())
 	}
 
 	log.SetOutput(file)

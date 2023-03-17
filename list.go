@@ -25,7 +25,6 @@ type courseList struct {
 	showHidden bool
 	keys       keyBinds
 	config     config.Config
-	testing    bool
 	session    http.Client
 }
 
@@ -116,7 +115,10 @@ func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd := cl.list.NewStatusMessage("Αποθηκέυση επιτυχής! (not really)")
 			return cl, cmd
 		case key.Matches(msg, cl.keys.toggleHideAssignment):
-			i := cl.list.SelectedItem().(item)
+			i, ok := cl.list.SelectedItem().(item)
+            if ! ok {
+                return cl, nil
+            }
 			var statusCmd tea.Cmd
 
 			if i.shouldHideAssignment(cl.config.Options.ExcludedAssignments) {
@@ -128,7 +130,10 @@ func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return cl, tea.Batch(updateItemsCmd, statusCmd)
 		case key.Matches(msg, cl.keys.toggleHideCourse):
-			i := cl.list.SelectedItem().(item)
+			i, ok := cl.list.SelectedItem().(item)
+            if ! ok {
+                return cl, nil
+            }
 			var statusCmd tea.Cmd
 
 			if i.shouldHideCourse(cl.config.Options.ExcludedCourses) {
@@ -144,7 +149,6 @@ func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return cl, tea.Batch(updateItemsCmd, updateTitleCmd)
 		case key.Matches(msg, cl.keys.toggleIncludeExpired):
 			cl.config.Options.IncludeExpired = !cl.config.Options.IncludeExpired
-			cl.logWhileTesting("%t", cl.config.Options.IncludeExpired)
 			return cl, tea.Batch(updateItemsCmd, updateTitleCmd)
 		}
 	case tea.WindowSizeMsg:
@@ -187,7 +191,7 @@ func (cl courseList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updateTitleCmd,
 		)
 	case errorMsg:
-		log.Print(msg.err)
+        log.Panicf("Unexpected error in msg, %v", msg.err)
 		return cl, nil
 	}
 
@@ -232,7 +236,7 @@ func (e errorMsg) Error() string { return e.err.Error() }
 func getAssignments(service assignment.Service) tea.Msg {
 	a, err := service.FetchAssignments(context.Background())
 	if err != nil {
-		log.Println(err)
+        return errorMsg{fmt.Errorf("error getting assignments: %v", err.Error())}
 	}
 
 	var items = make([]list.Item, len(a))
@@ -247,9 +251,6 @@ func getAssignments(service assignment.Service) tea.Msg {
 }
 
 func (cl courseList) getAssignmentsCmd() tea.Cmd {
-	if cl.testing {
-		return mockGetAssignments
-	}
 	return func() tea.Msg {
 		return getAllAssignments(cl.session, cl.config.Credentials, cl.config.Options.BaseDomain)
 	}
@@ -273,7 +274,7 @@ func getAllAssignments(session http.Client, creds auth.Credentials, domain strin
 
 	ser, err := assignment.NewService(context.Background(), conf, &session)
 	if err != nil {
-		log.Panic(err)
+		return errorMsg{err}
 	}
 
 	a, err := ser.FetchAssignments(context.Background())
@@ -289,12 +290,6 @@ func getAllAssignments(session http.Client, creds auth.Credentials, domain strin
 	}
 
 	return newItems(items)
-}
-
-func (cl courseList) logWhileTesting(format string, a ...any) {
-	if cl.testing {
-		fmt.Printf(format, a...)
-	}
 }
 
 func mockGetAssignments() tea.Msg {
