@@ -30,24 +30,25 @@ func (s ActiveWindow) String() string {
 }
 
 type window struct {
-	login form
-	list  courseList
-	active ActiveWindow
-    conf config.Config
-    session *http.Client
+	login    form
+	list     courseList
+	active   ActiveWindow
+	conf     config.Config
+	session  *http.Client
+	lastSize tea.WindowSizeMsg
 }
 
 func NewWindow(win ActiveWindow, conf config.Config, session *http.Client, err error) window {
 	w := window{
-        active: win,
-        conf: conf,
-        session: session,
-    }
+		active:  win,
+		conf:    conf,
+		session: session,
+	}
 
-    if w.active == Login {
+	if w.active == Login {
 		w.login = NewForm(conf)
-    }
-    w.list = NewCourseList()
+	}
+	w.list = NewCourseList()
 
 	return w
 }
@@ -70,9 +71,16 @@ func (w window) Init() tea.Cmd {
 	return nil
 }
 func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case loginSuccess:
 		w.active = List
+		cmds = append(cmds, func() tea.Msg {
+			return w.lastSize
+		})
+	case tea.WindowSizeMsg:
+		// keep track of last WindowSizeMsg, to pass onto switched to window
+		w.lastSize = msg
 	case tea.KeyMsg:
 		switch key := msg.String(); key {
 		case "ctrl+c":
@@ -85,15 +93,16 @@ func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case Login:
 		l, cmd := w.login.Update(msg)
 		w.login = l.(form)
-		return w, cmd
+		cmds = append(cmds, cmd)
 	case List:
 		l, cmd := w.list.Update(msg)
 		w.list = l.(courseList)
-		return w, cmd
+		cmds = append(cmds, cmd)
 	default:
 		log.Panic(fmt.Errorf("window state %s", w.active))
 		return w, nil // unreachable ?
 	}
+	return w, tea.Batch(cmds...)
 }
 
 func (w window) View() string {
