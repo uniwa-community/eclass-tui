@@ -12,8 +12,6 @@ require (
 )
 
 require (
-	github.com/Huray-hub/eclass-utils v0.8.0 // indirect
-	github.com/Huray-hub/eclass-utils/assignments v0.0.0-20230304232245-b1834b614ef9 // indirect
 	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
