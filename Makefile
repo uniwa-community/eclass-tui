@@ -10,13 +10,16 @@ options:
 	@echo "GOFLAGS  = $(GOFLAGS)"
 
 build: tidy
-	go build $(GOFLAGS) -o eclass-tui
+	cd src && \
+	go build $(GOFLAGS) -o ../eclass-tui
 
 tidy:
+	cd src/ && \
 	go mod tidy
-	@touch tidy
+	touch tidy
 
 test:
+	cd src/ && \
 	go test .
 
 clean:
@@ -27,8 +30,8 @@ run: build
 
 install: build
 	@echo "Installing into $(DESTDIR)$(PREFIX)bin/.."
-	cp -f eclass-tui $(DESTDIR)$(PREFIX)bin/eclass-tui
-	chmod 755        $(DESTDIR)$(PREFIX)bin/eclass-tui
+	cp -f ./eclass-tui $(DESTDIR)$(PREFIX)bin/eclass-tui
+	chmod 755          $(DESTDIR)$(PREFIX)bin/eclass-tui
 
 uninstall:
 	@echo "Uninstalling from $(DESTDIR)$(PREFIX)bin/.."
