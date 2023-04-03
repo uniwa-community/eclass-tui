@@ -75,9 +75,11 @@ func (w window) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case loginSuccess:
 		w.active = List
-		cmds = append(cmds, func() tea.Msg {
-			return w.lastSize
-		})
+		if w.lastSize.Width != 0 && w.lastSize.Height != 0 {
+			cmds = append(cmds, func() tea.Msg {
+				return w.lastSize
+			})
+		}
 	case tea.WindowSizeMsg:
 		// keep track of last WindowSizeMsg, to pass onto switched to window
 		w.lastSize = msg
